@@ -1,0 +1,127 @@
+# Importing necessary libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc
+from sklearn.preprocessing import StandardScaler
+import xgboost as xgb
+from imblearn.over_sampling import SMOTE
+
+# Load dataset
+df = pd.read_csv(r'csvdatasetforfccd.csv')
+
+# Data Preprocessing
+# Scale Amount and Time
+scaler = StandardScaler()
+df['Scaled_Amount'] = scaler.fit_transform(df['Amount'].values.reshape(-1, 1))
+df['Scaled_Time'] = scaler.fit_transform(df['Time'].values.reshape(-1, 1))
+
+# Drop original columns that were scaled
+df = df.drop(['Amount', 'Time'], axis=1)
+
+# Define features (X) and target (y)
+X = df.drop('Class', axis=1)  # Features (all columns except target)
+y = df['Class']  # Target variable
+
+# Train-Test Split (80% train, 20% test)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Handle Class Imbalance with SMOTE (Synthetic Minority Over-sampling Technique)
+smote = SMOTE(random_state=42)
+X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
+
+# Model 1: Logistic Regression
+log_reg = LogisticRegression(solver='liblinear')
+log_reg.fit(X_train_resampled, y_train_resampled)
+
+# Model 2: Random Forest Classifier
+rf_classifier = RandomForestClassifier(random_state=42)
+rf_classifier.fit(X_train_resampled, y_train_resampled)
+
+# Model 3: XGBoost
+xgb_classifier = xgb.XGBClassifier(random_state=42)
+xgb_classifier.fit(X_train_resampled, y_train_resampled)
+
+# Predictions
+y_pred_log_reg = log_reg.predict(X_test)
+y_pred_rf = rf_classifier.predict(X_test)
+y_pred_xgb = xgb_classifier.predict(X_test)
+
+# Function to plot confusion matrix
+def plot_confusion_matrix(y_test, y_pred, model_name):
+    cm = confusion_matrix(y_test, y_pred)
+    plt.figure(figsize=(6, 4))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Legitimate', 'Fraud'], yticklabels=['Legitimate', 'Fraud'])
+    plt.title(f'Confusion Matrix for {model_name}')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.show()
+
+# Function to plot ROC Curve
+def plot_roc_curve(y_test, y_pred_prob, model_name):
+    fpr, tpr, thresholds = roc_curve(y_test, y_pred_prob)
+    roc_auc = auc(fpr, tpr)
+    
+    plt.figure(figsize=(6, 4))
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(f'ROC Curve for {model_name}')
+    plt.legend(loc='lower right')
+    plt.show()
+
+# Visualizing the models
+# Logistic Regression
+y_pred_prob_log_reg = log_reg.predict_proba(X_test)[:, 1]
+plot_confusion_matrix(y_test, y_pred_log_reg, 'Logistic Regression')
+plot_roc_curve(y_test, y_pred_prob_log_reg, 'Logistic Regression')
+
+# Random Forest
+y_pred_prob_rf = rf_classifier.predict_proba(X_test)[:, 1]
+plot_confusion_matrix(y_test, y_pred_rf, 'Random Forest')
+plot_roc_curve(y_test, y_pred_prob_rf, 'Random Forest')
+
+# XGBoost
+y_pred_prob_xgb = xgb_classifier.predict_proba(X_test)[:, 1]
+plot_confusion_matrix(y_test, y_pred_xgb, 'XGBoost')
+plot_roc_curve(y_test, y_pred_prob_xgb, 'XGBoost')
+
+# Feature Importance for Random Forest
+def plot_feature_importance(model, model_name):
+    feature_importances = model.feature_importances_
+    features = X_train.columns
+    sorted_idx = feature_importances.argsort()
+    
+    plt.figure(figsize=(10, 6))
+    plt.barh(features[sorted_idx], feature_importances[sorted_idx], color='teal')
+    plt.title(f'Feature Importance for {model_name}')
+    plt.xlabel('Importance')
+    plt.ylabel('Features')
+    plt.show()
+
+plot_feature_importance(rf_classifier, 'Random Forest')
+
+# Model Evaluation Metrics
+def evaluate_model(y_test, y_pred, model_name):
+    print(f"\n{model_name} Evaluation:")
+    print(confusion_matrix(y_test, y_pred))
+    print(classification_report(y_test, y_pred))
+    print(f"ROC AUC Score: {roc_auc_score(y_test, y_pred)}")
+
+# Evaluate all models
+evaluate_model(y_test, y_pred_log_reg, 'Logistic Regression')
+evaluate_model(y_test, y_pred_rf, 'Random Forest')
+evaluate_model(y_test, y_pred_xgb, 'XGBoost')
+
+# Hyperparameter Tuning for Random Forest (example)
+param_grid = {'n_estimators': [100, 200], 'max_depth': [10, 20, None], 'min_samples_split': [2, 5]}
+grid_search_rf = GridSearchCV(RandomForestClassifier(random_state=42), param_grid, cv=3)
+grid_search_rf.fit(X_train_resampled, y_train_resampled)
+
+# Best parameters from grid search
+print(f"\nBest Parameters for Random Forest: {grid_search_rf.best_params_}")
